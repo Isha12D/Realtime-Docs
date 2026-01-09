@@ -29,7 +29,7 @@ const documentVersionSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-// Index for faster queries
+
 documentVersionSchema.index({ documentId: 1, versionNumber: -1 });
 
 export default mongoose.model("DocumentVersion", documentVersionSchema);

@@ -6,7 +6,7 @@ export const register = async (req, res) => {
   try {
     const { name, email, password } = req.body;
 
-    // 1️⃣ Check if user already exists
+    //  Check if user already exists
     const existingUser = await User.findOne({ email });
     if (existingUser) {
       return res.status(409).json({
@@ -14,17 +14,17 @@ export const register = async (req, res) => {
       });
     }
 
-    // 2️⃣ Hash password
+    //  Hash password
     const hashed = await bcrypt.hash(password, 10);
 
-    // 3️⃣ Create user
+    //  Create user
     const newUser = await User.create({
       name,
       email,
       password: hashed
     });
 
-    // 4️⃣ Generate token
+    //  Generate token
     const token = jwt.sign(
       { id: newUser._id },
       process.env.JWT_SECRET,
@@ -43,7 +43,7 @@ export const register = async (req, res) => {
 
   } catch (error) {
 
-    // 4️⃣ Mongo duplicate safety
+    //  Mongo duplicate safety
     if (error.code === 11000) {
       return res.status(409).json({
         message: "Email already registered"
