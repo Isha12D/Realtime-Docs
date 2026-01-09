@@ -1,3 +1,8 @@
+<<<<<<< HEAD
 node_modules/
 .env
 dist/
+=======
+.env
+node_modules
+>>>>>>> priya

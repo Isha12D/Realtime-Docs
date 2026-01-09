@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import io from 'socket.io-client';
 import { useAuth } from './AuthContext';
+import config from '../config';
 
 const WebSocketContext = createContext();
 
@@ -12,12 +13,9 @@ export const WebSocketProvider = ({ children }) => {
   useEffect(() => {
     if (!token) return;
 
-    const newSocket = io('http://localhost:5000', {
+    const newSocket = io(config.socket.url, {
       auth: { token },
-      reconnection: true,
-      reconnectionDelay: 1000,
-      reconnectionDelayMax: 5000,
-      reconnectionAttempts: 5,
+      ...config.socket,
     });
 
     newSocket.on('connect', () => {

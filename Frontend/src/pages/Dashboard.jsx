@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import DocumentCard from '../components/DocumentCard';
 import NewDocumentModal from '../components/NewDocumentModal';
+import config from '../config';
 
 export default function Dashboard() {
   const [documents, setDocuments] = useState([]);
@@ -19,7 +20,7 @@ export default function Dashboard() {
 
   const fetchDocuments = async () => {
     try {
-      const response = await fetch('http://localhost:5000/api/documents', {
+      const response = await fetch(`${config.api.baseURL}/api/documents`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       const data = await response.json();
@@ -39,7 +40,7 @@ export default function Dashboard() {
     if (!newDocName.trim()) return;
 
     try {
-      const response = await fetch('http://localhost:5000/api/documents', {
+      const response = await fetch(`${config.api.baseURL}/api/documents`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -64,7 +65,7 @@ export default function Dashboard() {
     if (!window.confirm('Delete this document?')) return;
 
     try {
-      const response = await fetch(`http://localhost:5000/api/documents/${docId}`, {
+      const response = await fetch(`${config.api.baseURL}/api/documents/${docId}`, {
         method: 'DELETE',
         headers: { Authorization: `Bearer ${token}` },
       });
