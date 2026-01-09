@@ -4,7 +4,7 @@ import Document from "../models/Document.js";
 export const getDocuments = async (req, res) => {
   try {
     const documents = await Document.find({
-      $or: [{ owner: req.userId }, { collaborators: req.userId }],
+
     })
       .populate("owner", "name email")
       .populate("collaborators", "name email")
@@ -28,14 +28,14 @@ export const getDocumentById = async (req, res) => {
       return res.status(404).json({ message: "Document not found" });
     }
 
-    // Check if user has access
-    const hasAccess =
-      document.owner._id.toString() === req.userId ||
-      document.collaborators.some((c) => c._id.toString() === req.userId);
+    // // Check if user has access
+    // const hasAccess =
+    //   document.owner._id.toString() === req.userId ||
+    //   document.collaborators.some((c) => c._id.toString() === req.userId);
 
-    if (!hasAccess) {
-      return res.status(403).json({ message: "Access denied" });
-    }
+    // if (!hasAccess) {
+    //   return res.status(403).json({ message: "Access denied" });
+    // }
 
     res.json({ document });
   } catch (error) {
@@ -77,14 +77,14 @@ export const updateDocument = async (req, res) => {
       return res.status(404).json({ message: "Document not found" });
     }
 
-    // Check if user has access
-    const hasAccess =
-      document.owner.toString() === req.userId ||
-      document.collaborators.some((c) => c.toString() === req.userId);
+    // // Check if user has access
+    // const hasAccess =
+    //   document.owner.toString() === req.userId ||
+    //   document.collaborators.some((c) => c.toString() === req.userId);
 
-    if (!hasAccess) {
-      return res.status(403).json({ message: "Access denied" });
-    }
+    // if (!hasAccess) {
+    //   return res.status(403).json({ message: "Access denied" });
+    // }
 
     document.content = content;
     document.lastModified = Date.now();
