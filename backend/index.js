@@ -63,17 +63,30 @@ io.on("connection", (socket) => {
   socket.on("join_document", ({ documentId }) => {
     socket.join(documentId);
     console.log(`User ${socket.id} joined document ${documentId}`);
+    
+    // Notify others in the room
+    socket.to(documentId).emit("user_joined", { userId: socket.userId });
   });
 
   // Leave document room
   socket.on("leave_document", ({ documentId }) => {
     socket.leave(documentId);
     console.log(`User ${socket.id} left document ${documentId}`);
+    
+    // Notify others in the room
+    socket.to(documentId).emit("user_left", { userId: socket.userId });
   });
 
-  // Handle document changes
+  // Handle document changes - real-time editing
   socket.on("send_changes", ({ documentId, delta }) => {
+    console.log(`Changes from ${socket.id} in document ${documentId}`);
     socket.to(documentId).emit("receive_changes", delta);
+  });
+
+  // Handle edit_document event (for compatibility)
+  socket.on("edit_document", ({ documentId, delta }) => {
+    console.log(`Edit from ${socket.id} in document ${documentId}`);
+    socket.to(documentId).emit("document_updated", delta);
   });
 
   // Handle cursor position

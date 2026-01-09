@@ -1,11 +1,10 @@
 import Document from "../models/Document.js";
+import DocumentVersion from "../models/DocumentVersion.js";
 
-// Get all documents for the authenticated user
+// Get all documents - show all documents to everyone
 export const getDocuments = async (req, res) => {
   try {
-    const documents = await Document.find({
-      $or: [{ owner: req.userId }, { collaborators: req.userId }],
-    })
+    const documents = await Document.find({})
       .populate("owner", "name email")
       .populate("collaborators", "name email")
       .sort({ lastModified: -1 });
@@ -28,15 +27,7 @@ export const getDocumentById = async (req, res) => {
       return res.status(404).json({ message: "Document not found" });
     }
 
-    // Check if user has access
-    const hasAccess =
-      document.owner._id.toString() === req.userId ||
-      document.collaborators.some((c) => c._id.toString() === req.userId);
-
-    if (!hasAccess) {
-      return res.status(403).json({ message: "Access denied" });
-    }
-
+    // Allow anyone to view the document (public sharing)
     res.json({ document });
   } catch (error) {
     console.error(error);
@@ -77,20 +68,26 @@ export const updateDocument = async (req, res) => {
       return res.status(404).json({ message: "Document not found" });
     }
 
-    // Check if user has access
-    const hasAccess =
-      document.owner.toString() === req.userId ||
-      document.collaborators.some((c) => c.toString() === req.userId);
+    // Get the last version number
+    const lastVersion = await DocumentVersion.findOne({ documentId: req.params.id })
+      .sort({ versionNumber: -1 });
+    
+    const newVersionNumber = lastVersion ? lastVersion.versionNumber + 1 : 1;
 
-    if (!hasAccess) {
-      return res.status(403).json({ message: "Access denied" });
-    }
+    // Save current version to history before updating
+    await DocumentVersion.create({
+      documentId: req.params.id,
+      content: content,
+      savedBy: req.userId,
+      versionNumber: newVersionNumber,
+    });
 
+    // Allow anyone to edit the document (public collaboration)
     document.content = content;
     document.lastModified = Date.now();
     await document.save();
 
-    res.json({ document });
+    res.json({ document, versionNumber: newVersionNumber });
   } catch (error) {
     console.error(error);
     res.status(500).json({ message: "Server error" });
@@ -144,6 +141,53 @@ export const addCollaborator = async (req, res) => {
       .populate("collaborators", "name email");
 
     res.json({ document: updatedDoc });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: "Server error" });
+  }
+};
+
+// Get version history for a document
+export const getVersionHistory = async (req, res) => {
+  try {
+    const versions = await DocumentVersion.find({ documentId: req.params.id })
+      .populate("savedBy", "name email")
+      .sort({ versionNumber: -1 })
+      .limit(50); // Last 50 versions
+
+    res.json({ versions });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: "Server error" });
+  }
+};
+
+// Revert document to a specific version
+export const revertToVersion = async (req, res) => {
+  try {
+    const { versionNumber } = req.body;
+    const document = await Document.findById(req.params.id);
+
+    if (!document) {
+      return res.status(404).json({ message: "Document not found" });
+    }
+
+    // Find the version to revert to
+    const version = await DocumentVersion.findOne({
+      documentId: req.params.id,
+      versionNumber: versionNumber,
+    });
+
+    if (!version) {
+      return res.status(404).json({ message: "Version not found" });
+    }
+
+    // Revert document content
+    document.content = version.content;
+    document.lastModified = Date.now();
+    await document.save();
+
+    res.json({ document, message: `Reverted to version ${versionNumber}` });
   } catch (error) {
     console.error(error);
     res.status(500).json({ message: "Server error" });

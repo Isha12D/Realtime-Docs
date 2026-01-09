@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useWebSocket } from '../context/WebSocketContext';
+import config from '../config';
 
 export default function DocumentEditor() {
   const { docId } = useParams();
@@ -12,56 +13,56 @@ export default function DocumentEditor() {
   const [collaborators, setCollaborators] = useState([]);
   const [isSaved, setIsSaved] = useState(true);
   const [charCount, setCharCount] = useState(0);
+  const [versions, setVersions] = useState([]);
+  const [showVersionHistory, setShowVersionHistory] = useState(false);
   const { token, user } = useAuth();
   const { socket, isConnected, joinRoom, leaveRoom, sendEdit } = useWebSocket();
   const navigate = useNavigate();
   const saveTimeoutRef = useRef(null);
   const contentRef = useRef(content);
+  const isTypingRef = useRef(false);
 
   useEffect(() => {
     fetchDocument();
   }, [docId, token]);
 
   useEffect(() => {
-    if (socket && docId) {
+    if (socket && docId && isConnected) {
+      console.log('Joining document room:', docId);
       joinRoom(docId);
 
-      socket.on('document_content', (data) => {
-        setContent(data.content);
-        contentRef.current = data.content;
-      });
-
+      // Listen for real-time updates from other users
       socket.on('document_updated', (data) => {
-        setContent(data.content);
-        contentRef.current = data.content;
-      });
-
-      socket.on('collaborators_list', (data) => {
-        setCollaborators(data.collaborators);
+        console.log('Received update from another user:', data);
+        // Only update if user is not currently typing
+        if (!isTypingRef.current && data.content !== contentRef.current) {
+          setContent(data.content);
+          contentRef.current = data.content;
+          setCharCount(data.content?.length || 0);
+        }
       });
 
       socket.on('user_joined', (data) => {
-        setCollaborators(data.collaborators);
+        console.log('User joined the document:', data);
       });
 
       socket.on('user_left', (data) => {
-        setCollaborators(data.collaborators);
+        console.log('User left the document:', data);
       });
 
       return () => {
+        console.log('Leaving document room:', docId);
         leaveRoom(docId);
-        socket.off('document_content');
         socket.off('document_updated');
-        socket.off('collaborators_list');
         socket.off('user_joined');
         socket.off('user_left');
       };
     }
-  }, [socket, docId, joinRoom, leaveRoom]);
+  }, [socket, docId, isConnected, joinRoom, leaveRoom]);
 
   const fetchDocument = async () => {
     try {
-      const response = await fetch(`http://localhost:5000/api/documents/${docId}`, {
+      const response = await fetch(`${config.api.baseURL}/api/documents/${docId}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       const data = await response.json();
@@ -83,23 +84,32 @@ export default function DocumentEditor() {
 
   const handleContentChange = (e) => {
     const newContent = e.target.value;
+    isTypingRef.current = true;
     setContent(newContent);
     contentRef.current = newContent;
     setCharCount(newContent.length);
     setIsSaved(false);
 
+    // Send changes immediately to other users
+    if (socket && isConnected) {
+      console.log('Sending changes to other users');
+      sendEdit(docId, { content: newContent });
+    }
+
+    // Debounce save to database
     if (saveTimeoutRef.current) {
       clearTimeout(saveTimeoutRef.current);
     }
 
     saveTimeoutRef.current = setTimeout(() => {
       saveDocument(newContent);
+      isTypingRef.current = false;
     }, 1000);
   };
 
   const saveDocument = async (docContent) => {
     try {
-      const response = await fetch(`http://localhost:5000/api/documents/${docId}`, {
+      const response = await fetch(`${config.api.baseURL}/api/documents/${docId}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
@@ -110,9 +120,7 @@ export default function DocumentEditor() {
 
       if (response.ok) {
         setIsSaved(true);
-        if (socket) {
-          sendEdit(docId, { content: docContent });
-        }
+        console.log('Document saved to database');
       }
     } catch (error) {
       setError('Failed to save document');
@@ -128,6 +136,60 @@ export default function DocumentEditor() {
     } else {
       navigate('/dashboard');
     }
+  };
+
+  const fetchVersionHistory = async () => {
+    try {
+      const response = await fetch(`${config.api.baseURL}/api/documents/${docId}/versions`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = await response.json();
+      if (response.ok) {
+        setVersions(data.versions);
+      }
+    } catch (error) {
+      console.error('Failed to fetch version history:', error);
+    }
+  };
+
+  const handleRevert = async (versionNumber) => {
+    if (!window.confirm(`Revert to Version ${versionNumber}?`)) return;
+
+    try {
+      const response = await fetch(`${config.api.baseURL}/api/documents/${docId}/revert`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ versionNumber }),
+      });
+
+      const data = await response.json();
+      if (response.ok) {
+        setContent(data.document.content);
+        contentRef.current = data.document.content;
+        setCharCount(data.document.content?.length || 0);
+        setShowVersionHistory(false);
+        
+        // Broadcast the reverted content to other users
+        if (socket && isConnected) {
+          sendEdit(docId, { content: data.document.content });
+        }
+        
+        alert('Document reverted successfully!');
+      }
+    } catch (error) {
+      console.error('Failed to revert:', error);
+      alert('Failed to revert document');
+    }
+  };
+
+  const toggleVersionHistory = () => {
+    if (!showVersionHistory) {
+      fetchVersionHistory();
+    }
+    setShowVersionHistory(!showVersionHistory);
   };
 
   if (loading) {
@@ -201,6 +263,17 @@ export default function DocumentEditor() {
           </div>
 
           <div className="flex items-center gap-3 sm:gap-6">
+            <button
+              onClick={toggleVersionHistory}
+              className="flex items-center gap-2 px-3 py-1.5 text-xs font-medium text-gray-700 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-all border border-gray-200 hover:border-indigo-300"
+              title="Version History"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              History
+            </button>
+
             <div className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium border ${isConnected ? 'bg-green-50 text-green-700 border-green-200' : 'bg-red-50 text-red-700 border-red-200'}`}>
               <div className={`w-1.5 h-1.5 rounded-full ${isConnected ? 'bg-green-500' : 'bg-red-500'} animate-pulse`}></div>
               {isConnected ? 'LIVE' : 'OFFLINE'}
@@ -246,6 +319,64 @@ export default function DocumentEditor() {
           />
         </div>
       </main>
+
+      {/* Version History Sidebar */}
+      {showVersionHistory && (
+        <div className="fixed inset-y-0 right-0 w-96 bg-white shadow-2xl border-l border-gray-200 z-50 flex flex-col">
+          <div className="flex items-center justify-between p-4 border-b border-gray-200">
+            <h2 className="text-lg font-semibold text-gray-900">Version History</h2>
+            <button
+              onClick={() => setShowVersionHistory(false)}
+              className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+
+          <div className="flex-1 overflow-y-auto p-4 space-y-3">
+            {versions.length === 0 ? (
+              <div className="text-center py-12 text-gray-400">
+                <svg className="w-12 h-12 mx-auto mb-3 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                <p>No version history yet</p>
+              </div>
+            ) : (
+              versions.map((version) => (
+                <div
+                  key={version._id}
+                  className="p-4 bg-gray-50 rounded-lg border border-gray-200 hover:border-indigo-300 hover:bg-indigo-50/50 transition group"
+                >
+                  <div className="flex items-start justify-between mb-2">
+                    <div>
+                      <div className="text-sm font-semibold text-gray-900">
+                        Version {version.versionNumber}
+                      </div>
+                      <div className="text-xs text-gray-500">
+                        {new Date(version.savedAt).toLocaleString()}
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => handleRevert(version.versionNumber)}
+                      className="px-3 py-1 text-xs font-medium text-indigo-600 hover:text-white hover:bg-indigo-600 border border-indigo-600 rounded-lg transition opacity-0 group-hover:opacity-100"
+                    >
+                      Revert
+                    </button>
+                  </div>
+                  <div className="text-xs text-gray-600">
+                    Saved by: {version.savedBy?.name || 'Unknown'}
+                  </div>
+                  <div className="mt-2 text-xs text-gray-400 font-mono bg-white p-2 rounded border border-gray-200 max-h-20 overflow-hidden">
+                    {version.content.substring(0, 100)}...
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

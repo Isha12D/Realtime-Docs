@@ -6,6 +6,8 @@ import {
   updateDocument,
   deleteDocument,
   addCollaborator,
+  getVersionHistory,
+  revertToVersion,
 } from "../controller/documentController.js";
 import { authenticateToken } from "../middleware/authMiddleware.js";
 
@@ -20,5 +22,9 @@ router.post("/", createDocument);
 router.put("/:id", updateDocument);
 router.delete("/:id", deleteDocument);
 router.post("/:id/collaborators", addCollaborator);
+
+// Version history routes
+router.get("/:id/versions", getVersionHistory);
+router.post("/:id/revert", revertToVersion);
 
 export default router;
