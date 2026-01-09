@@ -1,21 +1,69 @@
-// controllers/authController.js
 import User from "../models/User.js";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 
 export const register = async (req, res) => {
-  const hashed = await bcrypt.hash(req.body.password, 10);
-  await User.create({ ...req.body, password: hashed });
-  res.json({ message: "User registered" });
+  try {
+    const { name, email, password } = req.body;
+
+    // 1️⃣ Check if user already exists
+    const existingUser = await User.findOne({ email });
+    if (existingUser) {
+      return res.status(409).json({
+        message: "User already exists"
+      });
+    }
+
+    // 2️⃣ Hash password
+    const hashed = await bcrypt.hash(password, 10);
+
+    // 3️⃣ Create user
+    await User.create({
+      name,
+      email,
+      password: hashed
+    });
+
+    res.status(201).json({ message: "User registered" });
+
+  } catch (error) {
+
+    // 4️⃣ Mongo duplicate safety
+    if (error.code === 11000) {
+      return res.status(409).json({
+        message: "Email already registered"
+      });
+    }
+
+    console.error(error);
+    res.status(500).json({ message: "Server error" });
+  }
 };
 
 export const login = async (req, res) => {
-  const user = await User.findOne({ email: req.body.email });
-  if (!user) return res.status(400).json({ message: "User not found" });
+  try {
+    const { email, password } = req.body;
 
-  const ok = await bcrypt.compare(req.body.password, user.password);
-  if (!ok) return res.status(400).json({ message: "Wrong password" });
+    const user = await User.findOne({ email });
+    if (!user) {
+      return res.status(400).json({ message: "User not found" });
+    }
 
-  const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET);
-  res.json({ token });
+    const ok = await bcrypt.compare(password, user.password);
+    if (!ok) {
+      return res.status(400).json({ message: "Wrong password" });
+    }
+
+    const token = jwt.sign(
+      { id: user._id },
+      process.env.JWT_SECRET,
+      { expiresIn: "1h" }
+    );
+
+    res.json({ token });
+
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: "Server error" });
+  }
 };
